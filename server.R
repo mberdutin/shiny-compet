@@ -13,14 +13,15 @@ library(scales)
 library(viridis)
 library(ggthemes)
 library(gridExtra)
+library(lubridate)
 
-plot_brand <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5) {
+plot_brand <- function(brand = 'TOYOTA', site_order = 1, top_net = 5, year = '2016', week1 = '30', week2 = '38') {
   mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
   on.exit(dbDisconnect(mydb))
   query <- paste0("
                  select distinct banner_network, site, site_category, week, type, ", '"Nsites" ', 
                  "from bannerdays 
-                 where year = 2016 and month in (6, 7, 8) 
+                 where year in (", year, ") and week >= ", week1, " and week <= ", week2, " 
                  and subbrands_list not like '%NOKIA%'
                  and subbrands_list like '%", brand, "%'
                  ")
@@ -47,8 +48,8 @@ plot_brand <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5) {
     mutate(banner_network = factor(banner_network, levels = lev_banner$banner_network)) %>%
     mutate(site_f = factor(site, levels = lev_site$site)) %>%
     mutate(type_fl = type == 'network')
-  if (site_order == 'SH') placement_expand$site_f <- factor(placement_expand$site, levels = lev_SH$site)
-  if (site_order == 'category') placement_expand$site_f <- factor(placement_expand$site, levels = lev_category$site)
+  if (site_order == 2) placement_expand$site_f <- factor(placement_expand$site, levels = lev_SH$site)
+  if (site_order == 3) placement_expand$site_f <- factor(placement_expand$site, levels = lev_category$site)
   
   ggplot(placement_expand, aes(x = week, y = site_f)) +
     geom_tile(color = 'black', size = 0.1, aes(fill = Nsites)) +
@@ -59,7 +60,7 @@ plot_brand <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5) {
     scale_size_manual(values=c(network = 0.7, other = NA), guide="none") +
     theme_tufte() + 
     theme(plot.title = element_text(hjust = 0), axis.ticks = element_blank()) + 
-    labs(x = "week per network", y = "site", title = paste0(brand, " placement in summer: TOP", top_net, " networks, ", site_order, " site ordering, ", nrow(placement), " banner-weeks"))
+    labs(x = "week per network", y = "site", title = paste0(brand, " placement in summer: TOP", top_net, " networks, ", nrow(placement), " banner-weeks"))
 }
 
 plot_subbrands <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5, top_sub = 2, to_file = FALSE) {
@@ -142,10 +143,14 @@ dbDisconnect(mydb)
 
 shinyServer(function(input, output, session) {
   
-  
+
   output$map <- renderPlot({
-    
-    plot_brand(brand = input$text, top_net = 8)
+    start_date <- ymd(input$dates[1])
+    end_date <- ymd(input$dates[2])
+    year_str <- paste(year(start_date), year(end_date), sep = ', ')
+    start_week <- as.character(week(start_date))
+    end_week <- as.character(week(end_date))
+    plot_brand(brand = input$text, site_order = input$checkGroup, top_net = 3, year = year_str, week1 = start_week, week2 = end_week)
     
   }, width = 2000, height = 1000)
   session$onSessionEnded(function() {

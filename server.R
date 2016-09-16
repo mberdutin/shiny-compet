@@ -7,6 +7,7 @@
 
 library(shiny)
 library(RPostgreSQL)
+library(dplyr)
 library(ggplot2)
 library(scales)
 library(viridis)
@@ -14,9 +15,11 @@ library(ggthemes)
 library(gridExtra)
 
 plot_brand <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5) {
-  query = paste0("
-                 select distinct banner_network, site, site_category, week, type, Nsites 
-                 from bannerdays 
+  mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
+  on.exit(dbDisconnect(mydb))
+  query <- paste0("
+                 select distinct banner_network, site, site_category, week, type, ", '"Nsites" ', 
+                 "from bannerdays 
                  where year = 2016 and month in (6, 7, 8) 
                  and subbrands_list not like '%NOKIA%'
                  and subbrands_list like '%", brand, "%'
@@ -134,20 +137,21 @@ plot_subbrands <- function(brand = 'TOYOTA', site_order = 'URL', top_net = 5, to
 pg <- dbDriver("PostgreSQL")
 mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
 site_SH <- dbGetQuery(mydb, 'select * from "site_SH"')
+site_category <- dbGetQuery(mydb, 'select * from "site_category"')
+dbDisconnect(mydb)
 
-shinyServer(function(input, output) {
-
-  output$distPlot <- renderPlot({
-
-    # generate bins based on input$bins from ui.R
-    x    <- faithful[, 2]
-    bins <- seq(min(x), max(x), length.out = input$bins + 1)
-
-    # draw the histogram with the specified number of bins
-    hist(x, breaks = bins, col = 'darkgray', border = 'white')
-
-  })
-
+shinyServer(function(input, output, session) {
+  
+  
+  output$map <- renderPlot({
+    
+    plot_brand(brand = input$text, top_net = 8)
+    
+  }, width = 2000, height = 1000)
+  session$onSessionEnded(function() {
+    dbDisconnect(mydb)
+    cat('disconnect')
+    })
 })
 
 

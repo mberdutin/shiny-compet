@@ -73,14 +73,17 @@ plot_brand <- function(data, top_net, top_sub, category) {
     gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
       geom_tile(color = 'black', size = 0.007, aes(fill = n_formats)) +
       scale_fill_gradient(low = "white", high = "blue") +
+      theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()) +
       # facet_wrap(~ site_category, nrow = length(unique(placement$site_category)), dir = 'v', switch = 'y', scales = 'free') +
-      coord_equal() +
-      labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " banner-weeks")) +
-      geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
-      scale_size_manual(values=c(network = 0.7, other = NA), guide="none") +
-      theme_tufte() +
-      theme(title = element_text(size = 11), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none") +
-      theme(panel.border = element_blank(), panel.margin.x = unit(0.5, "cm"), panel.margin.y = unit(0.5, "cm"))
+      # coord_equal() +
+      labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " banner-weeks")) #+
+      # geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
+      # scale_size_manual(values=c(network = 0.7, other = NA), guide="none") #+
+      # theme_tufte() +
+      # theme(title = element_text(size = 11), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none")
     ggplotGrob(gg)
   }
   cclist <- lapply(lev_sub$subbrands_list, one_sub)
@@ -90,9 +93,9 @@ plot_brand <- function(data, top_net, top_sub, category) {
   grid.draw(g)
 }
 
-data <- get_data('toyota', date = c('2016-08-01', '2016-08-31')) 
+data <- get_data('toyota', date = c('2016-01-01', '2016-01-31')) 
 top_net <- 3
-top_sub <- 3
+top_sub <- 1
 category <- 'auto, news'
 
 plot_brand(data, top_net, top_sub, category)

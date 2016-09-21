@@ -1,11 +1,3 @@
-
-# This is the server logic for a Shiny web application.
-# You can find out more about building applications with Shiny here:
-#
-# http://shiny.rstudio.com
-#
-
-library(shiny)
 library(RPostgreSQL)
 library(dplyr)
 library(ggplot2)
@@ -18,6 +10,12 @@ library(gtable)
 library(lubridate)
 library(stringi)
 
+pg <- dbDriver("PostgreSQL")
+mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
+site_SH <- dbGetQuery(mydb, 'select * from "site_SH"')
+site_category <- dbGetQuery(mydb, 'select * from "site_category"')
+dbDisconnect(mydb)
+
 get_data <- function(brand, date) {
   mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
   on.exit({ 
@@ -27,7 +25,7 @@ get_data <- function(brand, date) {
                   select subbrands_list, banner_network, site, site_category, type, date, count(*) n_formats  
                   from bannerdays
                   where date between date'", date[1], "' and date'", date[2], "'", "
-                    and subbrands_list not like '%NOKIA%' and lower(subbrands_list) like '%", tolower(brand), "%'
+                  and subbrands_list not like '%NOKIA%' and lower(subbrands_list) like '%", tolower(brand), "%'
                   group by subbrands_list, banner_network, site, site_category, type, date
                   ")
   data <- dbGetQuery(mydb, query)
@@ -70,7 +68,7 @@ plot_brand <- function(data, top_net, top_sub, category) {
       mutate(type_fl = type == 'network') %>%
       filter(!is.na(site_f))
     if (tolower(category) != 'all') placement_expand <- filter(placement_expand, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
-
+    
     
     gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
       geom_tile(color = 'black', size = 0.007, aes(fill = n_formats)) +
@@ -92,27 +90,9 @@ plot_brand <- function(data, top_net, top_sub, category) {
   grid.draw(g)
 }
 
-pg <- dbDriver("PostgreSQL")
-mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
-site_SH <- dbGetQuery(mydb, 'select * from "site_SH"')
-site_category <- dbGetQuery(mydb, 'select * from "site_category"')
-dbDisconnect(mydb)
+data <- get_data('toyota', date = c('2016-08-01', '2016-08-31')) 
+top_net <- 3
+top_sub <- 3
+category <- 'auto, news'
 
-shinyServer(function(input, output, session) {
-  withProgress(message = 'Retrieving data',
-               detail = 'one second...', value = 0, {
-                 dataInput <- reactive({ get_data(input$text, input$dates) })
-                 # widthInput <- reactive({ 100 + 25 * input$top_net * (week(ymd(input$dates[2])) - week(ymd(input$dates[1]))) })
-               })
-
-  output$map <- renderPlot({
-    plot_brand(data = dataInput(), top_net = input$top_net, category = input$category, top_sub = input$top_sub)
-    
-  }, width = function() { as.integer(strsplit(input$format, 'x')[[1]][1]) }, height = function() { as.integer(strsplit(input$format, 'x')[[1]][2]) })
-  session$onSessionEnded(function() {
-    dbDisconnect(mydb)
-    cat('disconnect ')
-    })
-})
-
-
+plot_brand(data, top_net, top_sub, category)

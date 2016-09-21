@@ -24,13 +24,27 @@ get_data <- function(brand, date) {
   on.exit({ 
     dbDisconnect(mydb)
     cat('disconnect ')})
-  query <- paste0("
+  brand <- tolower(brand)
+  if (stri_detect_regex(brand, ' -')) {
+    brand_incl <- substr(brand, 1, stri_locate_first_fixed(brand, ' -') - 1)
+    brand_excl <- substr(brand, stri_locate_first_fixed(brand, ' -') + 2, nchar(brand))
+    query <- paste0("
                   select subbrands_list, banner_network, site, site_category, type, date, count(*) n_formats  
                   from bannerdays
                   where date between date'", date[1], "' and date'", date[2], "'", "
-                    and subbrands_list not like '%NOKIA%' and lower(subbrands_list) like '%", tolower(brand), "%'
+                    and lower(subbrands_list) not similar to '%(", paste(strsplit(brand_excl, ' -')[[1]], collapse = '|'), ")%' and lower(subbrands_list) like '%", brand_incl, "%'
                   group by subbrands_list, banner_network, site, site_category, type, date
                   ")
+  } else {
+    query <- paste0("
+                  select subbrands_list, banner_network, site, site_category, type, date, count(*) n_formats  
+                  from bannerdays
+                  where date between date'", date[1], "' and date'", date[2], "'", "
+                    and lower(subbrands_list) like '%", brand, "%'
+                  group by subbrands_list, banner_network, site, site_category, type, date
+                  ")
+  }
+  
   data <- dbGetQuery(mydb, query)
   Encoding(data$subbrands_list) <- 'UTF-8' 
   return(data)

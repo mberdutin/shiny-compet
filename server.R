@@ -18,12 +18,17 @@ library(gtable)
 library(lubridate)
 library(stringi)
 
+log_file <- file("calc.log", open = "at")
+
+log <- function(text, conn = log_file) {
+  if (stri_detect_fixed(text, 'start')) cat(paste0('\n', Sys.time(), " ",text), file = log_file, append = T, sep = "\n") 
+  else cat(paste(Sys.time(), text), file = log_file, append = T, sep = "\n")
+}
+
 get_data <- function(brand, date) {
-  cat('get\n')
+  log(paste('start', brand, date[1], date[2]))
   mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
-  on.exit({ 
-    dbDisconnect(mydb)
-    cat('disconnect ')})
+  on.exit({ dbDisconnect(mydb) })
   brand <- tolower(brand)
   if (stri_detect_regex(brand, ' -')) {
     brand_incl <- substr(brand, 1, stri_locate_first_fixed(brand, ' -') - 1)
@@ -46,11 +51,11 @@ get_data <- function(brand, date) {
   }
   
   data <- dbGetQuery(mydb, query)
-  Encoding(data$subbrands_list) <- 'UTF-8' 
+  Encoding(data$subbrands_list) <- 'UTF-8'
+  log('get')
   return(data)
 }
 filter_data <- function(data, top_net, top_sub, category, clean) {
-  cat('filter\n')
   placement <- data %>%
     mutate(subbrands_list = substr(subbrands_list, 1, 40)) %>%
     mutate(banner_network = gsub('googlesyndication', 'googles', banner_network)) %>%
@@ -71,10 +76,11 @@ filter_data <- function(data, top_net, top_sub, category, clean) {
     
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
   if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
+  log(paste('filter', top_net, top_sub, category, clean))
   placement
 }
-plot_brand <- function(placement, plot_type) {
-  cat('plot\n')
+plot_brand <- function(placement, plot_type, format) {
+
   lev_banner <- placement %>% distinct(banner_network, rank) %>% arrange(rank)
   lev_site_net   <- placement %>% distinct(site_net) %>% arrange(desc(site_net))
   lev_sub_net   <- placement %>% distinct(sub_net) %>% arrange(desc(sub_net))
@@ -110,7 +116,7 @@ plot_brand <- function(placement, plot_type) {
       
     }
     cclist <- lapply(lev_sub$subbrands_list, one_sub)
-    cclist[["size"]] <- 'first'
+    cclist[["size"]] <- 'max'
     g <- do.call(rbind, cclist)
     grid.newpage()
     grid.draw(g)
@@ -128,7 +134,7 @@ plot_brand <- function(placement, plot_type) {
         mutate(type_fl = type == 'network') %>%
         filter(!is.na(sub_net_f))
       
-      gg <- ggplot(placement_expand, aes(x = date, y = sub_net_f)) +
+      gg <- ggplot(placement_expand, aes(x = date, y = tolower(sub_net_f))) +
         geom_tile(color = 'black', size = 0.007, aes(fill = n_formats)) +
         scale_fill_gradient(low = "white", high = "blue") +
         coord_equal() +
@@ -137,13 +143,13 @@ plot_brand <- function(placement, plot_type) {
         scale_size_manual(values=c(network = 0.7, other = NA), guide="none") +
         scale_x_date(date_breaks = "2 weeks", expand=c(0,0)) +
         theme_tufte() +
-        theme(title = element_text(size = 11), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none") +
+        theme(title = element_text(size = 13), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none") +
         theme(panel.border = element_blank())
       ggplotGrob(gg)
       
     }
     cclist <- lapply(unique(placement$site), one_site)
-    cclist[["size"]] <- 'first'
+    cclist[["size"]] <- 'max'
     g <- do.call(rbind, cclist)
     grid.newpage()
     grid.draw(g)
@@ -158,28 +164,35 @@ plot_brand <- function(placement, plot_type) {
         full_join(exp_grid) %>%
         mutate(n_siteformats = ifelse(is.na(n_siteformats), N, n_siteformats)) 
 
-      gg <- ggplot(placement_expand, aes(x = date, y = subbrands_list)) +
+      gg <- ggplot(placement_expand, aes(x = date, y = tolower(subbrands_list))) +
         geom_tile(color = 'black', size = 0.007, aes(fill = n_siteformats)) +
         scale_fill_gradient(low = "white", high = "blue") +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(network, ', ', sum(placement$n_siteformats), " siteformats")) +
         theme_tufte() +
         scale_x_date(date_breaks = '2 weeks', expand=c(0,0)) +
-        theme(title = element_text(size = 11), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none") #+
+        theme(title = element_text(size = 13), plot.title = element_text(hjust = 0), axis.ticks = element_blank(), legend.position = "none") #+
         theme(panel.border = element_blank())
       ggplotGrob(gg)
       
     }
     cclist <- lapply(unique(placement$banner_network), one_net)
-    cclist[["size"]] <- 'first'
+    cclist[["size"]] <- 'max'
     g <- do.call(rbind, cclist)
     grid.newpage()
     grid.draw(g)
   }
   switch(as.integer(plot_type), plot_sub(), plot_site(), plot_net())
-
+  log(paste('plot', plot_type, format))
 }
-
+find_format <- function(placement, plot_type) {
+  width <- max(nchar(placement$subbrands_list)) * 5 + length(seq(min(placement$date), max(placement$date), 'days')) * 8
+ 
+  if (plot_type == 1) height <- length(unique(placement$subbrands_list)) * 40 +  n_groups(group_by(placement, subbrands_list, site_net)) * 9
+  if (plot_type == 2) height <- length(unique(placement$site)) * 40 +  n_groups(group_by(placement, subbrands_list, site)) * 12
+  if (plot_type == 3) height <- length(unique(placement$banner_network)) * 40 +  n_groups(group_by(placement, subbrands_list, banner_network)) * 12
+  return(list(width = width, height = height))
+}
 pg <- dbDriver("PostgreSQL")
 
 shinyServer(function(input, output) {
@@ -196,9 +209,23 @@ shinyServer(function(input, output) {
 
   output$map <- renderPlot({ 
     if (v$doPlot == FALSE) return()
-    isolate({plot_brand(filteredInput(), plot_type = input$radio) })
+    isolate({plot_brand(filteredInput(), plot_type = input$radio, format = input$format) })
     }, 
-      width = function() { as.integer(strsplit(input$format, 'x')[[1]][1]) }, height = function() { as.integer(strsplit(input$format, 'x')[[1]][2])})
+      width = function() { 
+        if (v$doPlot == FALSE) return(1000)
+        isolate({
+          if (!input$auto_format) as.integer(strsplit(input$format, 'x')[[1]][1])
+          else find_format(filteredInput(), input$radio)$width
+          }) 
+        
+      }, 
+    height = function() {  
+      if (v$doPlot == FALSE) return(1000)
+      isolate({
+        if (!input$auto_format) as.integer(strsplit(input$format, 'x')[[1]][2])
+        else find_format(filteredInput(), input$radio)$height
+        })
+      })
 
 })
 

@@ -12,7 +12,8 @@ shinyUI(fluidPage(
   fluidRow(wellPanel(
     fluidRow(
       # get
-      column(2, textInput("text", label = h5("Subbrand (e.g. kia -nokia -аврора)"), value = "toyota"), actionButton("go", "Plot")),
+      column(2, textInput("text", label = h5("Subbrand (e.g. kia -nokia -аврора)"), value = "toyota"), 
+             actionButton("go", "Draw the map (Enter)", icon = icon('picture-o'))),
       column(2, dateRangeInput("dates", label = h5("Date range"), min = "2015-01-01", max = "2016-08-31", 
                                start = '2016-01-01', end = '2016-08-31')),
       # filter
@@ -29,6 +30,7 @@ shinyUI(fluidPage(
     ))),
 
   fluidRow(
-    column(width = 12, plotOutput("map"))
+    column(width = 12, plotOutput("map"),
+    tags$head(tags$script(src="enter_button.js")))
   )
 ))

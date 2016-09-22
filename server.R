@@ -188,7 +188,7 @@ plot_brand <- function(placement, plot_type, format) {
 find_format <- function(placement, plot_type) {
   width <- max(nchar(placement$subbrands_list)) * 5 + length(seq(min(placement$date), max(placement$date), 'days')) * 8
  
-  if (plot_type == 1) height <- length(unique(placement$subbrands_list)) * 40 +  n_groups(group_by(placement, subbrands_list, site_net)) * 9
+  if (plot_type == 1) height <- length(unique(placement$subbrands_list)) * 40 +  n_groups(group_by(placement, subbrands_list, site_net)) * 8
   if (plot_type == 2) height <- length(unique(placement$site)) * 40 +  n_groups(group_by(placement, subbrands_list, site)) * 12
   if (plot_type == 3) height <- length(unique(placement$banner_network)) * 40 +  n_groups(group_by(placement, subbrands_list, banner_network)) * 12
   return(list(width = width, height = height))

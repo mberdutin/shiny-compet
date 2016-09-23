@@ -10,10 +10,7 @@ library(RPostgreSQL)
 library(dplyr)
 library(ggplot2)
 library(scales)
-library(viridis)
 library(ggthemes)
-library(gridExtra)
-library(grid)
 library(gtable)
 library(lubridate)
 library(stringi)
@@ -102,7 +99,7 @@ plot_brand <- function(placement, plot_type, format) {
         filter(!is.na(site_f))
       
       gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
-        geom_tile(color = 'black', size = 0.007, aes(fill = n_formats)) +
+        geom_tile(colour = 'black', size = 0.007, aes(fill = n_formats)) +
         scale_fill_gradient(low = "white", high = "blue") +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +

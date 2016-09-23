@@ -73,10 +73,7 @@ plot_brand <- function(data, top_net, top_sub, category) {
     gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
       geom_tile(color = 'black', size = 0.007, aes(fill = n_formats)) +
       scale_fill_gradient(low = "white", high = "blue") +
-      theme(panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.border = element_blank(),
-    panel.background = element_blank()) +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) +
       # facet_wrap(~ site_category, nrow = length(unique(placement$site_category)), dir = 'v', switch = 'y', scales = 'free') +
       # coord_equal() +
       labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " banner-weeks")) #+

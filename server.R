@@ -40,20 +40,28 @@ get_data <- function(brand, date) {
     brand_incl <- substr(brand, 1, stri_locate_first_fixed(brand, ' -') - 1)
     brand_excl <- substr(brand, stri_locate_first_fixed(brand, ' -') + 2, nchar(brand))
     query <- paste0("
-                  select subbrands_list, banner_network, site, site_category, type, date, count(*) n_formats  
-                  from bannerdays
-                  where date between date'", date[1], "' and date'", date[2], "'", "
-                    and lower(subbrands_list) not similar to '%(", paste(strsplit(brand_excl, ' -')[[1]], collapse = '|'), ")%' and lower(subbrands_list) like '%", brand_incl, "%'
-                  group by subbrands_list, banner_network, site, site_category, type, date
-                  ")
+                    with tmp as (
+                      select subbrands_list, banner_network, site, site_category, type, date, ", '"adId_list"', ", ad_format_adj,
+                        row_number() over (partition by subbrands_list, banner_network, site, site_category, type, date order by ad_format_adj) rn,
+                        count(ad_format_adj) over (partition by subbrands_list, banner_network, site, site_category, type, date) n_formats
+                      from bannerdays
+                      where date between date'", date[1], "' and date'", date[2], "'", "
+                        and lower(subbrands_list) not similar to '%(", paste(strsplit(brand_excl, ' -')[[1]], collapse = '|'), ")%' 
+                        and lower(subbrands_list) like '%", brand_incl, "%'
+                    )
+                    select * from tmp where rn = 1
+                    ")
   } else {
     query <- paste0("
-                  select subbrands_list, banner_network, site, site_category, type, date, count(*) n_formats  
-                  from bannerdays
-                  where date between date'", date[1], "' and date'", date[2], "'", "
-                    and lower(subbrands_list) like '%", brand, "%'
-                  group by subbrands_list, banner_network, site, site_category, type, date
-                  ")
+                    with tmp as (
+                      select subbrands_list, banner_network, site, site_category, type, date, ", '"adId_list"', ", ad_format_adj,
+                        row_number() over (partition by subbrands_list, banner_network, site, site_category, type, date order by ad_format_adj) rn,
+                        count(ad_format_adj) over (partition by subbrands_list, banner_network, site, site_category, type, date) n_formats
+                      from bannerdays
+                      where date between date'", date[1], "' and date'", date[2], "' and lower(subbrands_list) like '%", brand, "%'
+                    )
+                    select * from tmp where rn = 1
+                    ")
   }
   
   data <- dbGetQuery(mydb, query)
@@ -61,7 +69,7 @@ get_data <- function(brand, date) {
   log('get')
   return(data)
 }
-filter_data <- function(data, top_net, top_sub, category, clean, network_first, type) {
+filter_data <- function(data, top_net, top_sub, top_creative, category, clean, network_first, type) {
   placement <- data %>%
     mutate(subbrands_list = substr(subbrands_list, 1, 40)) %>%
     mutate(banner_network = gsub('N/A', '_______', banner_network)) %>%
@@ -73,14 +81,19 @@ filter_data <- function(data, top_net, top_sub, category, clean, network_first, 
     mutate(rank_sub = dense_rank(desc(strength_sub))) %>%
     filter(rank_sub <= top_sub) %>%
     group_by(banner_network) %>%
-    mutate(strength = n()) %>%
+    mutate(strength_net = n()) %>%
+    group_by(adId_list) %>%
+    mutate(strength_ad = n()) %>%
     rowwise() %>% 
     mutate(site_net = ifelse(network_first, paste(banner_network, site, sep = ', '), paste(site, banner_network, sep = ', '))) %>%
     mutate(sub_net = ifelse(network_first, paste(banner_network, subbrands_list, sep = ', '), paste(subbrands_list, banner_network, sep = ', '))) %>%
+    mutate(format_site = paste(ad_format_adj, site, sep = ', ')) %>%
     ungroup() %>%
     mutate(week = week(date)) %>%
-    mutate(rank = dense_rank(desc(strength))) %>%
-    filter(rank <= top_net)
+    mutate(rank_net = dense_rank(desc(strength_net))) %>%
+    filter(rank_net <= top_net) %>%
+    mutate(rank_ad = dense_rank(desc(strength_ad))) %>%
+    filter(rank_ad <= top_creative)
     
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
   if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
@@ -90,11 +103,12 @@ filter_data <- function(data, top_net, top_sub, category, clean, network_first, 
 }
 plot_brand <- function(placement, plot_type) {
 
-  lev_banner <- placement %>% distinct(banner_network, rank) %>% arrange(rank)
+  lev_banner <- placement %>% distinct(banner_network, rank_net) %>% arrange(rank_net)
   lev_site_net   <- placement %>% distinct(site_net) %>% arrange(desc(site_net))
   lev_sub_net   <- placement %>% distinct(sub_net) %>% arrange(desc(sub_net))
   lev_category   <- placement %>% group_by(site_category) %>% mutate(m = mean(n_formats)) %>% distinct(site, m) %>% arrange(m, site_category)
   lev_sub <- placement %>% distinct(subbrands_list, rank_sub) %>% arrange(rank_sub)
+  lev_format_site   <- placement %>% distinct(format_site) %>% arrange(desc(format_site))
   date_range <- seq(min(placement$date), max(placement$date), 'days')
   
   plot_sub <- function() {
@@ -221,7 +235,42 @@ plot_brand <- function(placement, plot_type) {
     grid.newpage()
     grid.draw(g)
   }
-  switch(as.integer(plot_type), plot_sub(), plot_site(), plot_net(), plot_sitenet())
+  plot_subformat <- function() {
+    one_sub <- function(subbrand) {
+      placement <- placement %>% filter(subbrands_list == subbrand)
+      exp_grid <- expand.grid(format_site = unique(placement$format_site), 
+                              date = date_range, N = 0, stringsAsFactors = F) 
+      
+      placement_expand <- placement %>%
+        full_join(exp_grid) %>%
+        mutate(n_formats = ifelse(is.na(n_formats), N, n_formats)) %>%
+        mutate(site_f = factor(format_site, levels = lev_format_site$format_site)) %>%
+        mutate(type_fl = type == 'network') %>%
+        filter(!is.na(site_f))
+      
+      gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
+        geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) +
+        scale_fill_discrete(na.value = "white") +
+        # scale_fill_gradient(low = "white", high = param$plot_str$fill_high) +
+        coord_equal() +
+        labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
+        geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
+        scale_size_manual(values=c(network = param$plot_num$dot_size, other = NA), guide="none") +
+        scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
+        theme_tufte() +
+        theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
+        theme(axis.ticks = element_blank(), panel.border = element_blank())
+      if (length(unique(placement_expand$adId_list)) * 2 > length(unique(placement_expand$site_f))) gg <- gg + theme(legend.position = "none")
+      ggplotGrob(gg)
+      
+    }
+    cclist <- lapply(lev_sub$subbrands_list, one_sub)
+    cclist[["size"]] <- 'max'
+    g <- do.call(rbind, cclist)
+    grid.newpage()
+    grid.draw(g)
+  }
+  switch(as.integer(plot_type), plot_sub(), plot_site(), plot_net(), plot_sitenet(), plot_subformat())
   log(paste('plot', plot_type))
 }
 find_format <- function(placement, plot_type) {
@@ -245,6 +294,11 @@ find_format <- function(placement, plot_type) {
     height <- length(unique(placement$banner_network)) * param$format_a$height4 + 
       n_groups(group_by(placement, site, banner_network)) * param$format_b$height4
   }
+  if (plot_type == 5) {
+    width <- max(nchar(placement$format_site)) * param$format_a$width5 + length(seq(min(placement$date), max(placement$date), 'days')) * param$format_b$width5
+    height <- length(unique(placement$subbrands_list)) * param$format_a$height5 + 
+      n_groups(group_by(placement, subbrands_list, format_site)) * param$format_b$height5
+  }
   return(list(width = width, height = height))
 }
 pg <- dbDriver("PostgreSQL")
@@ -258,7 +312,8 @@ shinyServer(function(input, output) {
   })
 
   dataInput <- reactive({ get_data(input$text, input$dates) })
-  filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_sub, input$category, input$clean, input$network_first, input$type) })
+  filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_sub, input$top_creative, 
+                                          input$category, input$clean, input$network_first, input$type) })
 
 
   output$map <- renderPlot({ 

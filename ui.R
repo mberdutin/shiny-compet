@@ -25,15 +25,19 @@ shinyUI(fluidPage(
              numericInput("clean", label = h5("Min days per row"), value = param$default_num$clean)),
       column(1, numericInput("top_net", label = h5("Top networks"), value = param$default_num$top_net), 
              numericInput("top_sub", label = h5("Top subbrands"), value = param$default_num$top_sub)),
+      column(1, numericInput("top_creative", label = h5("Top creatives"), value = param$default_num$top_creative)),
       # plot
       column(2, radioButtons("radio", label = h5("Facet to plot"),
-                             choices = list("Subbrands ~ network + site" = 1, "Site ~ network + subbrands" = 2, 
-                                            "Network ~ subbrands" = 3, "Network ~ site" = 4), 
-                             selected = param$default_num$facet), 
-             checkboxInput("network_first", label = "Network first", value = param$default_num$network_first == 1)),
+                             choices = list("Subbrands ~ network + site" = 1, 
+                                            "Subbrands ~ formats + site" = 5,
+                                            "Network ~ site" = 4, 
+                                            "Network ~ subbrands" = 3, 
+                                            "Site ~ network + subbrands" = 2), 
+                             selected = param$default_num$facet)),
       column(1, radioButtons("type", label = h5("Type to plot"), choices = list("All" = 1, "Network" = 2)), 
              radioButtons("stat", label = h5("Stat to plot"), choices = list("Formats count" = 1, "Creative change" = 2))),
-      column(1, actionButton("go", "Draw the map (Enter)", icon = icon('picture-o')))
+      column(1, checkboxInput("network_first", label = "Network first", value = param$default_num$network_first == 1), 
+             actionButton("go", "Draw the map (Enter)", icon = icon('picture-o')))
 
     ))),
 

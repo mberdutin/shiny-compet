@@ -6,26 +6,34 @@
 #
 
 library(shiny)
+library(ini)
+param <- read.ini('setup.ini')
+param$default_num <- lapply(param$default_num, as.numeric)
+param$default_str$dates <- strsplit(param$default_str$dates, ':')[[1]]
+param$default_str$dates_minmax <- strsplit(param$default_str$dates_minmax, ':')[[1]]
 
 shinyUI(fluidPage(
   titlePanel("Banner network map"),
   fluidRow(wellPanel(
     fluidRow(
       # get
-      column(2, textInput("text", label = h5("Subbrand (e.g. kia -nokia -аврора)"), value = "toyota"), 
-             actionButton("go", "Draw the map (Enter)", icon = icon('picture-o'))),
-      column(2, dateRangeInput("dates", label = h5("Date range"), min = "2015-01-01", max = "2016-08-31", 
-                               start = '2016-01-01', end = '2016-08-31')),
+      column(2, textInput("text", label = h5("Subbrand (e.g. kia -nokia -аврора)"), value = param$default_str$text), 
+             dateRangeInput("dates", label = h5("Date range"), min = param$default_str$dates_minmax[1], max = param$default_str$dates_minmax[2], 
+                            start = param$default_str$dates[1], end = param$default_str$dates[2])),
       # filter
-      column(2, textInput("category", label = h5("Site category (e.g. auto, news)"), value = "all")),
-      column(1, numericInput("top_net", label = h5("Top networks"), value = 10)),
-      column(1, numericInput("top_sub", label = h5("Top subbrands"), value = 10)),
-      column(1, numericInput("clean", label = h5("Min days per row"), value = 3)),
+      column(2, textInput("category", label = h5("Site category (e.g. auto, news)"), value = param$default_str$category), 
+             numericInput("clean", label = h5("Min days per row"), value = param$default_num$clean)),
+      column(1, numericInput("top_net", label = h5("Top networks"), value = param$default_num$top_net), 
+             numericInput("top_sub", label = h5("Top subbrands"), value = param$default_num$top_sub)),
       # plot
-      column(1, textInput("format", label = h5("Plot's format"), value = '___x___'), checkboxInput("auto_format", label = "Auto format", value = TRUE)),
       column(2, radioButtons("radio", label = h5("Facet to plot"),
-                             choices = list("Subbrands ~ site + network" = 1, "Site ~ subbrands + networks" = 2, "Network ~ subbrands" = 3), 
-                             selected = 1))
+                             choices = list("Subbrands ~ network + site" = 1, "Site ~ network + subbrands" = 2, 
+                                            "Network ~ subbrands" = 3, "Network ~ site" = 4), 
+                             selected = param$default_num$facet), 
+             checkboxInput("network_first", label = "Network first", value = param$default_num$network_first == 1)),
+      column(1, radioButtons("type", label = h5("Type to plot"), choices = list("All" = 1, "Network" = 2)), 
+             radioButtons("stat", label = h5("Stat to plot"), choices = list("Formats count" = 1, "Creative change" = 2))),
+      column(1, actionButton("go", "Draw the map (Enter)", icon = icon('picture-o')))
 
     ))),
 

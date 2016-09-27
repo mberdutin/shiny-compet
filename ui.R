@@ -35,7 +35,7 @@ shinyUI(fluidPage(
                                             "Site ~ network + subbrands" = 2), 
                              selected = param$default_num$facet)),
       column(1, radioButtons("type", label = h5("Type to plot"), choices = list("All" = 1, "Network" = 2)), 
-             radioButtons("stat", label = h5("Stat to plot"), choices = list("Formats count" = 1, "Creative change" = 2))),
+             radioButtons("fill", label = h5("Stat to plot"), choices = list("Formats count" = 1, "Creative id" = 2), selected = param$default_num$fill)),
       column(1, checkboxInput("network_first", label = "Network first", value = param$default_num$network_first == 1), 
              actionButton("go", "Draw the map (Enter)", icon = icon('picture-o')))
 

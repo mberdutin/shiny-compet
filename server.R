@@ -93,7 +93,7 @@ filter_data <- function(data, top_net, top_sub, top_creative, category, clean, n
     mutate(rank_net = dense_rank(desc(strength_net))) %>%
     filter(rank_net <= top_net) %>%
     mutate(rank_ad = dense_rank(desc(strength_ad))) %>%
-    filter(rank_ad <= top_creative)
+    mutate(adId_list = ifelse(rank_ad <= top_creative, adId_list, 'other'))
     
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
   if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
@@ -101,7 +101,7 @@ filter_data <- function(data, top_net, top_sub, top_creative, category, clean, n
   log(paste('filter', top_net, top_sub, category, clean))
   placement
 }
-plot_brand <- function(placement, plot_type) {
+plot_brand <- function(placement, plot_type, fill_radio) {
 
   lev_banner <- placement %>% distinct(banner_network, rank_net) %>% arrange(rank_net)
   lev_site_net   <- placement %>% distinct(site_net) %>% arrange(desc(site_net))
@@ -125,8 +125,6 @@ plot_brand <- function(placement, plot_type) {
         filter(!is.na(site_f))
       
       gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
-        geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
-        scale_fill_gradient(low = "white", high = param$plot_str$fill_high) +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
         geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
@@ -134,8 +132,17 @@ plot_brand <- function(placement, plot_type) {
         scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
         theme_tufte() +
         theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
-        theme(axis.ticks = element_blank(), legend.position = "none") +
+        theme(axis.ticks = element_blank()) +
         theme(panel.border = element_blank())
+      if (fill_radio == 2) {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+          scale_fill_discrete(na.value = "white") 
+      }
+      else {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
+          scale_fill_gradient(low = "white", high = param$plot_str$fill_high, na.value = "white") +
+          theme(legend.position = "none")
+      }
       ggplotGrob(gg)
       
     }
@@ -159,8 +166,6 @@ plot_brand <- function(placement, plot_type) {
         filter(!is.na(sub_net_f))
       
       gg <- ggplot(placement_expand, aes(x = date, y = tolower(sub_net_f))) +
-        geom_tile(color = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
-        scale_fill_gradient(low = "white", high = param$plot_str$fill_high) +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(my_site, ', ', nrow(placement), " formatdays")) +
         geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
@@ -168,8 +173,17 @@ plot_brand <- function(placement, plot_type) {
         scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
         theme_tufte() +
         theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
-        theme(axis.ticks = element_blank(), legend.position = "none") +
+        theme(axis.ticks = element_blank()) +
         theme(panel.border = element_blank())
+      if (fill_radio == 2) {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+          scale_fill_discrete(na.value = "white") 
+      }
+      else {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
+          scale_fill_gradient(low = "white", high = param$plot_str$fill_high, na.value = "white") +
+          theme(legend.position = "none")
+      }
       ggplotGrob(gg)
       
     }
@@ -249,9 +263,6 @@ plot_brand <- function(placement, plot_type) {
         filter(!is.na(site_f))
       
       gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
-        geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) +
-        scale_fill_discrete(na.value = "white") +
-        # scale_fill_gradient(low = "white", high = param$plot_str$fill_high) +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
         geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
@@ -260,9 +271,17 @@ plot_brand <- function(placement, plot_type) {
         theme_tufte() +
         theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
         theme(axis.ticks = element_blank(), panel.border = element_blank())
-      if (length(unique(placement_expand$adId_list)) * 2 > length(unique(placement_expand$site_f))) gg <- gg + theme(legend.position = "none")
+
+      if (fill_radio == 2) {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+          scale_fill_discrete(na.value = "white") 
+      }
+      else {
+        gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
+          scale_fill_gradient(low = "white", high = param$plot_str$fill_high, na.value = "white") +
+          theme(legend.position = "none")
+      }
       ggplotGrob(gg)
-      
     }
     cclist <- lapply(lev_sub$subbrands_list, one_sub)
     cclist[["size"]] <- 'max'
@@ -295,7 +314,9 @@ find_format <- function(placement, plot_type) {
       n_groups(group_by(placement, site, banner_network)) * param$format_b$height4
   }
   if (plot_type == 5) {
-    width <- max(nchar(placement$format_site)) * param$format_a$width5 + length(seq(min(placement$date), max(placement$date), 'days')) * param$format_b$width5
+    width <- max(nchar(placement$format_site)) * param$format_a$width5 + 
+      length(seq(min(placement$date), max(placement$date), 'days')) * param$format_b$width5 +
+      max(nchar(placement$adId_list)) * param$format_a$width5
     height <- length(unique(placement$subbrands_list)) * param$format_a$height5 + 
       n_groups(group_by(placement, subbrands_list, format_site)) * param$format_b$height5
   }
@@ -318,7 +339,7 @@ shinyServer(function(input, output) {
 
   output$map <- renderPlot({ 
     if (v$doPlot == FALSE) return()
-    isolate({plot_brand(filteredInput(), plot_type = input$radio) })
+    isolate({plot_brand(filteredInput(), plot_type = input$radio, input$fill) })
     }, 
       width = function() { 
         if (v$doPlot == FALSE) return(1000)

@@ -12,10 +12,15 @@ library(ggplot2)
 library(scales)
 library(ggthemes)
 library(grid)
+library(gridExtra)
 library(gtable)
 library(lubridate)
 library(stringi)
 library(ini)
+library(httr)
+library(magick)
+library(mongolite)
+library(jsonlite)
 
 
 log_file <- file("calc.log", open = "at")
@@ -122,7 +127,8 @@ plot_brand <- function(placement, plot_type, fill_radio) {
         mutate(n_formats = ifelse(is.na(n_formats), N, n_formats)) %>%
         mutate(site_f = factor(site_net, levels = lev_site_net$site_net)) %>%
         mutate(type_fl = type == 'network') %>%
-        filter(!is.na(site_f))
+        filter(!is.na(site_f)) %>%
+        mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) 
       
       gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
         coord_equal() +
@@ -136,10 +142,12 @@ plot_brand <- function(placement, plot_type, fill_radio) {
         theme(panel.border = element_blank())
       if (fill_radio == 2) {
         gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+          # geom_tile(aes(x = date, y = site_f, fill = adId_list, alpha = shade)) +
           scale_fill_discrete(na.value = "white") 
       }
       else {
         gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
+          # geom_tile(aes(x = date, y = site_f, fill = n_formats, alpha = shade)) +
           scale_fill_gradient(low = "white", high = param$plot_str$fill_high, na.value = "white") +
           theme(legend.position = "none")
       }
@@ -322,7 +330,16 @@ find_format <- function(placement, plot_type) {
   }
   return(list(width = width, height = height))
 }
+check_image <- function(out) {
+  img <- image_read('http://jeroenooms.github.io/images/tiger.svg')
+  for (i in nrow(out)) {
+    try(img <- append(img, image_read(unserializeJSON(out$img[i]))))
+  }
+  if (length(img) > 1) img <- img[2:length(img)]
+  return(img)
+}
 pg <- dbDriver("PostgreSQL")
+m  <- mongo(collection = "creatives", url = "mongodb://max:docker@10.12.0.104:27017/iCreative")
 
 shinyServer(function(input, output) {
   v <- reactiveValues(doPlot = FALSE)
@@ -354,6 +371,35 @@ shinyServer(function(input, output) {
         find_format(filteredInput(), input$radio)$height
         })
       })
+  output$myImage <- renderImage({
+    if (v$doPlot == FALSE) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png',
+                                       contentType = 'image/png',
+                                       width = 1,
+                                       height = 1,
+                                       alt = ""))
+    isolate({
+      # A temp file to save the output.
+      # This file will be removed later by renderImage
+      adIds <- filteredInput() %>% distinct(adId_list) %>% filter(adId_list != 'other') %>% sample_n(2)
+      out <- m$find(paste0('{"adId" : { "$in": [ ', paste(adIds$adId_list, collapse = ', '), ' ] }}'))
+      
+      img <- check_image(out)
+      left_to_right <- image_append(image_scale(img, "x200"))
+      image_background(left_to_right, "white", flatten = TRUE)
+      
+      filename <- tempfile(fileext='.png')
+      image_write(img, path = filename, format = "png")
+
+      
+      
+      # Return a list containing the filename
+      list(src = filename,
+           contentType = 'image/png',
+           width = image_info(img)['width'],
+           height = image_info(img)['height'],
+           alt = "This is alternate text")
+    })
+  }, deleteFile = TRUE)
 
 })
 

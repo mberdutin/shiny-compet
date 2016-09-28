@@ -42,6 +42,10 @@ shinyUI(fluidPage(
     ))),
 
   fluidRow(
+    column(width = 12, imageOutput("myImage"),
+    tags$head(tags$script(src="enter_button.js")))
+  ),
+  fluidRow(
     column(width = 12, plotOutput("map"),
     tags$head(tags$script(src="enter_button.js")))
   )

@@ -96,3 +96,12 @@ top_sub <- 1
 category <- 'auto, news'
 
 plot_brand(data, top_net, top_sub, category)
+
+check_format <- function(out) {
+  img <- 'svg'
+  for (i in nrow(out)) {
+    try(img <- append(img, image_info(image_read(unserializeJSON(out$img[i])))['format']))
+  }
+  if (length(img) > 1) img <- img[2:length(img)]
+  return(img)
+}

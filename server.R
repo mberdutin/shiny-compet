@@ -331,23 +331,53 @@ find_format <- function(placement, plot_type) {
   return(list(width = width, height = height))
 }
 check_image <- function(out) {
-  img <- image_read('http://jeroenooms.github.io/images/tiger.svg')
-  for (i in nrow(out)) {
-    try(img <- append(img, image_read(unserializeJSON(out$img[i]))))
-  }
+    img <- image_read('http://jeroenooms.github.io/images/tiger.svg')
+  for (i in 1:nrow(out)) { 
+    img <- tryCatch({
+      read <- image_read(unserializeJSON(out$img[i]))[1]
+      info <- image_info(read)
+      annotation <- paste(as.character(out$adId[i]), info$format, paste(info$width, info$height, sep = 'x'))
+      if (info$width >= 600 && info$height > 100) read <- image_scale(read, 'x100')
+      if (info$width >= 600 && info$height < 100) read <- image_scale(read, '600x')
+      if (abs(info$width - info$height) < 100) read <- image_scale(read, '300x')
+      append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black"))
+      },
+      error = function(cond) {
+        message(paste("Cant read image", out$adId[i]))
+        # Choose a return value in case of error
+        return(NULL)
+      })
+    }
   if (length(img) > 1) img <- img[2:length(img)]
   return(img)
 }
+montage_image <- function(img) {
+  info <- image_info(img)
+  idx_wide <- as.numeric(row.names(info[info$width > info$height, ]))
+  idx_other <- setdiff(seq(1, nrow(info)), idx_wide)
+  cat(paste('wide', paste(idx_wide, collapse = ' '), '#', length(idx_wide)))
+  
+  if (length(idx_wide) > 0 & length(idx_other) > 0) {
+    img_list <- image_scale(image_append(img[idx_other]), 'x200') %>% image_background("white", flatten = TRUE)
+    for (i in seq(1, length(idx_wide) %/% 3)) {
+      idx <- c(3*i - 2, 3*i - 1, 3*i)
+      img_list <- append(img_list, image_append(img[idx_wide[idx]]) %>% image_background("white", flatten = TRUE)) 
+    }
+    out <- image_append(img_list, T)
+  } else {
+    out <- image_scale(image_append(img), 'x200')
+  }
+  
+  return(out %>% image_background("white", flatten = TRUE))
+}
+
 pg <- dbDriver("PostgreSQL")
 m  <- mongo(collection = "creatives", url = "mongodb://max:docker@10.12.0.104:27017/iCreative")
 
+
 shinyServer(function(input, output) {
   v <- reactiveValues(doPlot = FALSE)
-  observeEvent(input$go, {
-    # 0 will be coerced to FALSE
-    # 1+ will be coerced to TRUE
-    v$doPlot <- input$go
-  })
+  observeEvent(input$go, {v$doPlot <- input$go})
 
   dataInput <- reactive({ get_data(input$text, input$dates) })
   filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_sub, input$top_creative, 
@@ -380,12 +410,13 @@ shinyServer(function(input, output) {
     isolate({
       # A temp file to save the output.
       # This file will be removed later by renderImage
-      adIds <- filteredInput() %>% distinct(adId_list) %>% filter(adId_list != 'other') %>% sample_n(2)
+      adIds <- filteredInput() %>% distinct(adId_list) %>% filter(adId_list != 'other') # %>% sample_n(2)
       out <- m$find(paste0('{"adId" : { "$in": [ ', paste(adIds$adId_list, collapse = ', '), ' ] }}'))
-      
-      img <- check_image(out)
-      left_to_right <- image_append(image_scale(img, "x200"))
-      image_background(left_to_right, "white", flatten = TRUE)
+      log(paste(adIds$adId_list, collapse = ', '))
+      img <- check_image(out) %>%
+        montage_image() %>%
+        image_convert("png", 8)
+      # left_to_right <- image_convert(image_append(image_scale(img, "x200")), "png", 8)
       
       filename <- tempfile(fileext='.png')
       image_write(img, path = filename, format = "png")

@@ -7,6 +7,7 @@
 
 library(shiny)
 library(ini)
+# library(plotly)
 param <- read.ini('setup.ini')
 param$default_num <- lapply(param$default_num, as.numeric)
 param$default_str$dates <- strsplit(param$default_str$dates, ':')[[1]]

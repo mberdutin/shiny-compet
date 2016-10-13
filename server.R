@@ -17,10 +17,9 @@ library(gtable)
 library(lubridate)
 library(stringi)
 library(ini)
-library(httr)
 library(magick)
-library(mongolite)
 library(jsonlite)
+
 
 
 log_file <- file("calc.log", open = "at")
@@ -36,7 +35,7 @@ param$format_a <- lapply(param$format, function(x) {as.numeric(strsplit(x, '-')[
 param$format_b <- lapply(param$format, function(x) {as.numeric(strsplit(x, '-')[[1]][2])})
 
 
-get_data <- function(brand, date) {
+get_data      <- function(brand, date) {
   log(paste('start', brand, date[1], date[2]))
   mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
   on.exit({ dbDisconnect(mydb) })
@@ -74,7 +73,7 @@ get_data <- function(brand, date) {
   log('get')
   return(data)
 }
-filter_data <- function(data, top_net, top_sub, top_creative, category, clean, network_first, type) {
+filter_data   <- function(data, top_net, top_sub, top_creative, category, clean, network_first, type) {
   placement <- data %>%
     mutate(subbrands_list = substr(subbrands_list, 1, 40)) %>%
     mutate(banner_network = gsub('N/A', '_______', banner_network)) %>%
@@ -106,7 +105,7 @@ filter_data <- function(data, top_net, top_sub, top_creative, category, clean, n
   log(paste('filter', top_net, top_sub, category, clean))
   placement
 }
-plot_brand <- function(placement, plot_type, fill_radio) {
+plot_brand    <- function(placement, plot_type, fill_radio) {
 
   lev_banner <- placement %>% distinct(banner_network, rank_net) %>% arrange(rank_net)
   lev_site_net   <- placement %>% distinct(site_net) %>% arrange(desc(site_net))
@@ -297,10 +296,47 @@ plot_brand <- function(placement, plot_type, fill_radio) {
     grid.newpage()
     grid.draw(g)
   }
-  switch(as.integer(plot_type), plot_sub(), plot_site(), plot_net(), plot_sitenet(), plot_subformat())
+  plotly_sub <- function() {
+    exp_grid <- expand.grid(site_net = unique(placement$site_net), 
+                            date = date_range, N = 0, stringsAsFactors = F) 
+    
+    placement_expand <- placement %>%
+      full_join(exp_grid) %>%
+      mutate(n_formats = ifelse(is.na(n_formats), N, n_formats)) %>%
+      mutate(site_f = factor(site_net, levels = lev_site_net$site_net)) %>%
+      mutate(type_fl = type == 'network') %>%
+      filter(!is.na(site_f)) %>%
+      mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) 
+    
+    gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
+      coord_equal() +
+      labs(x = NULL, y = NULL, title = 'Title') +
+      geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
+      scale_size_manual(values=c(network = param$plot_num$dot_size, other = NA), guide="none") +
+      facet_wrap(~ subbrands_list, nrow = length(unique(placement$subbrands_list))) + 
+      scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
+      theme_tufte() +
+      theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
+      theme(axis.ticks = element_blank()) +
+      theme(panel.border = element_blank())
+    if (fill_radio == 2) {
+      gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+        # geom_tile(aes(x = date, y = site_f, fill = adId_list, alpha = shade)) +
+        scale_fill_discrete(na.value = "white") 
+    }
+    else {
+      gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = n_formats)) +
+        # geom_tile(aes(x = date, y = site_f, fill = n_formats, alpha = shade)) +
+        scale_fill_gradient(low = "white", high = param$plot_str$fill_high, na.value = "white") +
+        theme(legend.position = "none")
+    }
+    gg
+  }
+  result <- switch(as.integer(plot_type), plot_sub(), plot_site(), plot_net(), plot_sitenet(), plot_subformat())
   log(paste('plot', plot_type))
+  return(result)
 }
-find_format <- function(placement, plot_type) {
+find_format   <- function(placement, plot_type) {
   width <- max(nchar(placement$subbrands_list)) * param$format_a$width1 + 
     length(seq(min(placement$date), max(placement$date), 'days')) * param$format_b$width1
  
@@ -330,38 +366,56 @@ find_format <- function(placement, plot_type) {
   }
   return(list(width = width, height = height))
 }
-check_image <- function(out) {
+get_image     <- function(filtered) {
+  mydb <- dbConnect(pg, dbname="max", user="max", password="docker", host="10.12.0.104", port=5432)
+  on.exit({ dbDisconnect(mydb) })
+  
+  adIds <- filtered %>% distinct(adId_list) %>% filter(adId_list != 'other') # %>% sample_n(2)
+  # out <- m$find(paste0('{"adId" : { "$in": [ ', paste(adIds$adId_list, collapse = ', '), ' ] }}'))
+  out <- dbGetQuery(mydb, paste('select "adId", img from raw_creative where "adId" in (', paste(adIds$adId_list, collapse = ', '), ')'))
+  log(paste(adIds$adId_list, collapse = ', '))
+  return(out)
+}
+check_image   <- function(out) {
     img <- image_read('http://jeroenooms.github.io/images/tiger.svg')
   for (i in 1:nrow(out)) { 
-    img <- tryCatch({
-      read <- image_read(unserializeJSON(out$img[i]))[1]
+      read <- tryCatch({
+        image_read(unserializeJSON(out$img[i]))[1]
+      },
+      error = function(cond) {
+        message(paste("Cant read image", out$adId[i]))
+        cond
+        }
+      )
+
+      if (inherits(read, "error")) next
       info <- image_info(read)
       annotation <- paste(as.character(out$adId[i]), info$format, paste(info$width, info$height, sep = 'x'))
       if (info$width >= 600 && info$height > 100) read <- image_scale(read, 'x100')
       if (info$width >= 600 && info$height < 100) read <- image_scale(read, '600x')
       if (abs(info$width - info$height) < 100) read <- image_scale(read, '300x')
-      append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black"))
-      },
-      error = function(cond) {
-        message(paste("Cant read image", out$adId[i]))
-        # Choose a return value in case of error
-        return(NULL)
-      })
+      img <- append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black"))
     }
   if (length(img) > 1) img <- img[2:length(img)]
   return(img)
 }
 montage_image <- function(img) {
   info <- image_info(img)
-  idx_wide <- as.numeric(row.names(info[info$width > info$height, ]))
+  idx_wide <- as.numeric(row.names(info[info$width - 100> info$height, ]))
   idx_other <- setdiff(seq(1, nrow(info)), idx_wide)
   cat(paste('wide', paste(idx_wide, collapse = ' '), '#', length(idx_wide)))
   
   if (length(idx_wide) > 0 & length(idx_other) > 0) {
     img_list <- image_scale(image_append(img[idx_other]), 'x200') %>% image_background("white", flatten = TRUE)
-    for (i in seq(1, length(idx_wide) %/% 3)) {
-      idx <- c(3*i - 2, 3*i - 1, 3*i)
-      img_list <- append(img_list, image_append(img[idx_wide[idx]]) %>% image_background("white", flatten = TRUE)) 
+    if (length(idx_wide) %/% 3 > 0) {
+      for (i in seq(1, length(idx_wide) %/% 3)) {
+        idx <- c(3*i - 2, 3*i - 1, 3*i)
+        img_list <- append(img_list, image_append(img[idx_wide[idx]]) %>% image_background("white", flatten = TRUE)) 
+      }
+    }
+    if (length(idx_wide) %% 3 > 0) {
+      img_list <- append(img_list, image_append(img[idx_wide[seq(length(idx_wide) + 1 - length(idx_wide) %% 3, length(idx_wide))]]) %>% 
+                           image_background("white", flatten = TRUE)) 
     }
     out <- image_append(img_list, T)
   } else {
@@ -370,10 +424,8 @@ montage_image <- function(img) {
   
   return(out %>% image_background("white", flatten = TRUE))
 }
-
+  
 pg <- dbDriver("PostgreSQL")
-m  <- mongo(collection = "creatives", url = "mongodb://max:docker@10.12.0.104:27017/iCreative")
-
 
 shinyServer(function(input, output) {
   v <- reactiveValues(doPlot = FALSE)
@@ -382,20 +434,20 @@ shinyServer(function(input, output) {
   dataInput <- reactive({ get_data(input$text, input$dates) })
   filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_sub, input$top_creative, 
                                           input$category, input$clean, input$network_first, input$type) })
-
-
-  output$map <- renderPlot({ 
+  creativeInput <- reactive({ get_image(filteredInput()) })
+  
+  output$map <- renderPlot({
     if (v$doPlot == FALSE) return()
-    isolate({plot_brand(filteredInput(), plot_type = input$radio, input$fill) })
-    }, 
-      width = function() { 
+    isolate({ plot_brand(filteredInput(), plot_type = input$radio, input$fill) })
+    },
+      width = function() {
         if (v$doPlot == FALSE) return(1000)
         isolate({
           find_format(filteredInput(), input$radio)$width
-          }) 
-        
-      }, 
-    height = function() {  
+          })
+
+      },
+    height = function() {
       if (v$doPlot == FALSE) return(1000)
       isolate({
         find_format(filteredInput(), input$radio)$height
@@ -410,20 +462,14 @@ shinyServer(function(input, output) {
     isolate({
       # A temp file to save the output.
       # This file will be removed later by renderImage
-      adIds <- filteredInput() %>% distinct(adId_list) %>% filter(adId_list != 'other') # %>% sample_n(2)
-      out <- m$find(paste0('{"adId" : { "$in": [ ', paste(adIds$adId_list, collapse = ', '), ' ] }}'))
-      log(paste(adIds$adId_list, collapse = ', '))
+      out <- creativeInput()
       img <- check_image(out) %>%
         montage_image() %>%
         image_convert("png", 8)
-      # left_to_right <- image_convert(image_append(image_scale(img, "x200")), "png", 8)
       
       filename <- tempfile(fileext='.png')
       image_write(img, path = filename, format = "png")
 
-      
-      
-      # Return a list containing the filename
       list(src = filename,
            contentType = 'image/png',
            width = image_info(img)['width'],
@@ -431,6 +477,7 @@ shinyServer(function(input, output) {
            alt = "This is alternate text")
     })
   }, deleteFile = TRUE)
+  
 
 })
 
